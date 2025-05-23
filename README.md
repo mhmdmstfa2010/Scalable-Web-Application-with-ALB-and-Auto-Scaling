@@ -24,7 +24,7 @@ This project implements a highly available and scalable web application infrastr
 
 ### 3. Compute Layer (EC2/ASG Module)
 - Auto Scaling Group across AZs
-- Launch Template with Amazon Linux 2023
+- Launch Template 
 - Instance Type: t2.micro
 - Apache web server installed via user data
 - Scaling policies based on CPU utilization

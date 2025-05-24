@@ -1,133 +1,257 @@
 # Scalable Web Application Infrastructure
 
-This project implements a highly available and scalable web application infrastructure on AWS using Terraform. The architecture follows AWS best practices for security, scalability, and high availability.
+This project implements a highly available and scalable **decoupled web application infrastructure** on AWS using Terraform. The architecture follows AWS best practices for security, scalability, and high availability with separate frontend and backend tiers.
 
 ## Architecture Diagram
 
 ![AWS Infrastructure Diagram](Scalable%20Web%20Application%20with%20ALB%20and%20Auto%20Scaling.png)
 
+## Architecture Overview
+
+```
+Internet (Users)
+      ↓ HTTP:80
+🌐 Frontend ALB (Public)
+      ↓ HTTP:80
+🖥️ Frontend EC2 (Apache + HTML)
+      ↓ API calls to backend ALB
+⚙️ Backend ALB (Private)
+      ↓ HTTP:8080
+🔧 Backend EC2 (Node.js API)
+      ↓ MySQL:3306
+🗄️ RDS MySQL (Primary + Secondary)
+```
+
 ## Infrastructure Components
 
 ### 1. Network Layer (VPC Module)
-- VPC with CIDR block: 10.0.0.0/16
-- Public Subnets: 10.0.1.0/24, 10.0.2.0/24
-- Private Subnets: 10.0.101.0/24, 10.0.102.0/24
-- NAT Gateways for private subnet internet access
-- Internet Gateway for public subnets
+- **VPC**: 10.0.0.0/16 across 2 Availability Zones
+- **Public Subnets**: 10.0.1.0/24 (us-east-1a), 10.0.2.0/24 (us-east-1b)
+- **Private Subnets**: 10.0.101.0/24 (us-east-1a), 10.0.102.0/24 (us-east-1b)
+- **NAT Gateways**: Per AZ for private subnet internet access
+- **Internet Gateway**: For public subnet access
 
-### 2. Load Balancer (ALB Module)
-- Application Load Balancer in public subnets
-- HTTP (80) listener with optional HTTPS (443)
-- Health checks configured
-- Access logs enabled
-- Security group allowing inbound HTTP/HTTPS
+### 2. Frontend Tier
+#### Frontend Load Balancer (Frontend ALB Module)
+- **Internet-facing** Application Load Balancer
+- Deployed in **public subnets**
+- HTTP (80) listener
+- Health checks for frontend instances
+- Security group allowing HTTP/HTTPS from internet
 
-### 3. Compute Layer (EC2/ASG Module)
-- Auto Scaling Group across AZs
-- Launch Template with Amazon Linux 2023
-- Instance Type: t2.micro
-- Apache web server installed via user data
-- Scaling policies based on CPU utilization
-- Security group allowing traffic from ALB
+#### Frontend Compute (Frontend EC2 Module)
+- **Auto Scaling Group** (1-3 instances)
+- **Apache web servers** with modern HTML interface
+- Deployed in **public subnets**
+- **IAM instance profile** for CloudWatch access
+- CPU-based auto scaling (70% threshold)
+
+### 3. Backend Tier
+#### Backend Load Balancer (Backend ALB Module)
+- **Internal** Application Load Balancer
+- Deployed in **private subnets**
+- HTTP (8080) listener for API traffic
+- Health checks on `/api/health` endpoint
+- Security group allowing traffic from frontend EC2
+
+#### Backend Compute (Backend EC2 Module)
+- **Auto Scaling Group** (1-3 instances)
+- **Node.js API servers** with REST endpoints
+- Deployed in **private subnets**
+- **IAM instance profile** for CloudWatch access
+- CPU-based auto scaling (70% threshold)
 
 ### 4. Database Layer (RDS Module)
-- MySQL 8.0 database
-- Multi-AZ deployment
-- Instance Class: db.t3.micro
-- Automated backups (7-day retention)
-- Security group allowing traffic from EC2
+- **MySQL 8.0** database engine
+- **Multi-AZ deployment** (Primary + Secondary)
+- Instance Class: **db.t3.micro**
+- **Automated backups** (7-day retention)
+- **Auto-scaling storage** (20GB → 100GB)
+- Deployed in **private subnets**
+- Security group allowing traffic from backend EC2 only
 
-### 5. Monitoring (Monitoring Module)
-- CloudWatch Dashboard
-- CPU, Memory, and Request metrics
-- Custom alarms for:
-  - High CPU utilization
-  - High response time
-  - Error rates
-  - Database performance
-- SNS notifications for alerts
+### 5. Security (Security Module)
+- **5-tier security group architecture**:
+  - Frontend ALB Security Group (Internet → Frontend ALB)
+  - Frontend EC2 Security Group (Frontend ALB → Frontend EC2)
+  - Backend ALB Security Group (Frontend EC2 → Backend ALB)
+  - Backend EC2 Security Group (Backend ALB → Backend EC2)
+  - RDS Security Group (Backend EC2 → RDS)
+
+### 6. Identity & Access Management (IAM)
+- **EC2 IAM Role** with policies for:
+  - CloudWatch metrics publishing
+  - Systems Manager access
+  - CloudWatch Logs access
+- **IAM Instance Profile** attached to both frontend and backend instances
+
+### 7. Monitoring & Notifications (Monitoring Module)
+- **CloudWatch Dashboard** with metrics for:
+  - EC2 CPU utilization
+  - ALB request count and response time
+  - RDS CPU and connections
+  - Application error rates
+- **CloudWatch Alarms** for:
+  - High CPU utilization (EC2 & RDS)
+  - High response time (ALB)
+  - Error rates (5XX responses)
+- **SNS Topic** for email notifications
+- **Email subscriptions** for alarm notifications
 
 ## Security Features
 
-1. **Network Security**
-   - Private subnets for application and database
-   - NAT Gateways for outbound internet access
-   - Security group layering
+### 1. **Network Security**
+- **Multi-tier architecture** with proper network isolation
+- **Private subnets** for backend and database
+- **NAT Gateways** for secure outbound internet access
+- **Security group layering** with least privilege access
 
-2. **Access Control**
-   - ALB in public subnets only
-   - EC2 instances in private subnets
-   - RDS in private subnets
-   - Key pair for EC2 access
+### 2. **Access Control**
+- **Frontend ALB**: Internet-facing (public subnets)
+- **Backend ALB**: Internal only (private subnets)
+- **EC2 Instances**: Proper IAM roles and instance profiles
+- **RDS**: Isolated in private subnets, backend access only
 
-3. **Monitoring & Logging**
-   - ALB access logs
-   - CloudWatch metrics
-   - SNS notifications
+### 3. **Monitoring & Security**
+- **CloudWatch monitoring** for all components
+- **SNS notifications** for security and performance alerts
+- **Multi-AZ deployment** for fault tolerance
 
-## High Availability
+## High Availability & Scalability
 
-- Multi-AZ deployment
-- Auto Scaling across AZs
-- RDS Multi-AZ
-- Load balancer for traffic distribution
+### **High Availability**
+- **Multi-AZ deployment** across us-east-1a and us-east-1b
+- **RDS Multi-AZ** with automatic failover
+- **Auto Scaling Groups** for both frontend and backend
+- **Multiple NAT Gateways** (one per AZ)
+
+### **Auto Scaling**
+- **Frontend**: 1-3 instances based on CPU utilization
+- **Backend**: 1-3 instances based on CPU utilization
+- **Target CPU threshold**: 70%
+- **Health checks**: ELB-based with 300s grace period
+
+### **Load Distribution**
+- **Frontend ALB**: Distributes user traffic across frontend instances
+- **Backend ALB**: Distributes API traffic across backend instances
+- **Cross-AZ load balancing** enabled
+
+## Application Architecture
+
+### **Frontend Application**
+- **Technology**: Apache + HTML5 + JavaScript
+- **Features**: 
+  - Modern responsive UI
+  - API testing functionality
+  - Real-time server information display
+
+### **Backend API**
+- **Technology**: Node.js + HTTP server
+- **Endpoints**:
+  - `GET /api/health` - Health check endpoint
+  - `GET /api/*` - General API endpoints
+- **Features**:
+  - CORS enabled
+  - JSON responses
+  - Health monitoring
 
 ## Getting Started
 
-1. **Prerequisites**
-   ```bash
-   - AWS CLI configured
-   - Terraform installed
-   - AWS account with appropriate permissions
-   ```
+### **Prerequisites**
+```bash
+- AWS CLI configured with appropriate permissions
+- Terraform >= 1.0 installed
+- SSH key pair created in AWS (ALB_key)
+```
 
-2. **Configuration**
-   ```bash
-   # Initialize Terraform
-   terraform init
+### **Quick Deployment**
+```bash
+# 1. Clone and navigate to project
+cd manara
 
-   # Review the plan
-   terraform plan
+# 2. Initialize Terraform
+terraform init
 
-   # Apply the infrastructure
-   terraform apply
-   ```
+# 3. Review the deployment plan
+terraform plan
 
-3. **Post-Deployment**
-   - Confirm SNS subscription for alerts
-   - Access the application via ALB DNS name
-   - Monitor the CloudWatch dashboard
+# 4. Deploy infrastructure (47 resources)
+terraform apply
 
-## Variables
+# 5. Get application URL
+terraform output frontend_alb_dns_name
+```
 
-Key variables that can be customized:
-- `environment`: Environment name (dev/prod)
-- `vpc_cidr`: VPC CIDR block
-- `instance_type`: EC2 instance type
-- `db_instance_class`: RDS instance class
-- `alarm_email`: Email for monitoring alerts
+### **Post-Deployment Setup**
+1. **Confirm SNS subscription** in your email
+2. **Access the application** via Frontend ALB DNS name
+3. **Test the API** using the "Test Backend API" button
+4. **Monitor** via CloudWatch Dashboard
 
-## Maintenance
+## Configuration Variables
 
-1. **Backup Strategy**
-   - RDS automated backups
-   - Snapshot before major changes
-   - Regular backup testing
+### **Key Variables**
+```hcl
+environment = "dev"                           # Environment name
+vpc_cidr = "10.0.0.0/16"                     # VPC CIDR block
+availability_zones = ["us-east-1a", "us-east-1b"]  # AZ deployment
+instance_type = "t2.micro"                   # EC2 instance type
+db_instance_class = "db.t3.micro"            # RDS instance type
+alarm_email = "your-email@example.com"       # Monitoring alerts
+```
 
-2. **Monitoring**
-   - Review CloudWatch metrics
-   - Check ALB access logs
-   - Monitor scaling events
+## Outputs
 
-3. **Updates**
-   - Regular security patches
-   - Database maintenance
-   - Infrastructure updates
+After deployment, you'll get:
+- `frontend_alb_dns_name` - Application URL
+- `backend_alb_dns_name` - Internal API URL
+- `rds_endpoint` - Database connection endpoint
+- `frontend_asg_name` - Frontend Auto Scaling Group
+- `backend_asg_name` - Backend Auto Scaling Group
+
+## Maintenance & Operations
+
+### **Backup Strategy**
+- **RDS automated backups** (7-day retention)
+- **Multi-AZ failover** capability
+- **Auto-scaling storage** up to 100GB
+- **Parameter groups** for custom configurations
+
+### **Monitoring**
+- **CloudWatch Dashboard**: Real-time metrics
+- **Email alerts**: Performance and error notifications
+- **Auto Scaling events**: Automatic instance management
+- **Health checks**: Continuous application monitoring
+
+### **Updates & Scaling**
+- **Horizontal scaling**: Auto Scaling Groups handle demand
+- **Vertical scaling**: Instance types can be updated
+- **Database scaling**: Storage auto-scales automatically
+- **Infrastructure updates**: Terraform state management
 
 ## Cost Optimization
 
-- Auto Scaling based on demand
-- t2.micro instances for development
-- Multi-AZ only where necessary
-- CloudWatch metrics for resource optimization
+- **Auto Scaling**: Pay only for needed capacity
+- **t2.micro instances**: Cost-effective for development
+- **Multi-AZ**: Balanced availability vs. cost
+- **Storage auto-scaling**: Efficient storage usage
+- **CloudWatch monitoring**: Optimize based on actual usage
+
+## Security Best Practices
+
+✅ **Network isolation** with private subnets  
+✅ **IAM roles** instead of hardcoded credentials  
+✅ **Security group layering** with minimal access  
+✅ **Multi-AZ deployment** for fault tolerance  
+✅ **Encrypted storage** for RDS  
+✅ **Monitoring and alerting** for security events  
+
+---
+
+**Architecture Status**: ✅ Production-Ready  
+**Total Resources**: 47 AWS resources  
+**Deployment Time**: ~10-15 minutes  
+**High Availability**: Multi-AZ across 2 zones  
+**Auto Scaling**: Frontend + Backend tiers  
+**Monitoring**: Full CloudWatch + SNS integration
 

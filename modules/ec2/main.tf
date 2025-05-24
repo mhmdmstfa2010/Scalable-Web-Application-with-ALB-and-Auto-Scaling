@@ -6,6 +6,13 @@ resource "aws_launch_template" "ec2_launch_template" {
   user_data = var.user_data
 
   vpc_security_group_ids = var.security_group_ids
+
+  dynamic "iam_instance_profile" {
+    for_each = var.iam_instance_profile != null ? [1] : []
+    content {
+      name = var.iam_instance_profile
+    }
+  }
 }
 
 resource "aws_autoscaling_group" "ec2_autoscaling_group" {

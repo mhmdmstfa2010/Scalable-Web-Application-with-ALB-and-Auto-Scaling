@@ -31,4 +31,4 @@ variable "allowed_cidr_blocks" {
   type        = list(string)
   description = "List of CIDR blocks allowed to access ALB"
   default     = ["0.0.0.0/0"]  # Be more restrictive in production
-} 
+}

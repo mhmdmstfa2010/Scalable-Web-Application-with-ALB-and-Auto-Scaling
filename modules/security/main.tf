@@ -1,13 +1,21 @@
-# ALB Security Group
-resource "aws_security_group" "alb" {
-  name        = "${var.environment}-alb-sg"
-  description = "Security group for ALB"
+# Frontend ALB Security Group
+resource "aws_security_group" "frontend_alb" {
+  name        = "${var.environment}-frontend-alb-sg"
+  description = "Security group for frontend ALB"
   vpc_id      = var.vpc_id
 
   ingress {
     description = "HTTP from Internet"
-    from_port   = var.alb_port
-    to_port     = var.alb_port
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from Internet"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -20,22 +28,22 @@ resource "aws_security_group" "alb" {
   }
 
   tags = {
-    Name = "${var.environment}-alb-sg"
+    Name = "${var.environment}-frontend-alb-sg"
   }
 }
 
-# EC2 Security Group
-resource "aws_security_group" "ec2" {
-  name        = "${var.environment}-ec2-sg"
-  description = "Security group for EC2 instances"
+# Frontend EC2 Security Group
+resource "aws_security_group" "frontend_ec2" {
+  name        = "${var.environment}-frontend-ec2-sg"
+  description = "Security group for frontend EC2 instances"
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "HTTP from ALB"
-    from_port       = var.app_port
-    to_port         = var.app_port
+    description     = "HTTP from Frontend ALB"
+    from_port       = 80
+    to_port         = 80
     protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
+    security_groups = [aws_security_group.frontend_alb.id]
   }
 
   egress {
@@ -46,10 +54,60 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name = "${var.environment}-ec2-sg"
+    Name = "${var.environment}-frontend-ec2-sg"
+  }
+}
+
+# Backend ALB Security Group
+resource "aws_security_group" "backend_alb" {
+  name        = "${var.environment}-backend-alb-sg"
+  description = "Security group for backend ALB"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "API traffic from frontend EC2"
+    from_port       = var.app_port
+    to_port         = var.app_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.frontend_ec2.id]
   }
 
-  depends_on = [aws_security_group.alb]
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.environment}-backend-alb-sg"
+  }
+}
+
+# Backend EC2 Security Group
+resource "aws_security_group" "backend_ec2" {
+  name        = "${var.environment}-backend-ec2-sg"
+  description = "Security group for backend EC2 instances"
+  vpc_id      = var.vpc_id
+
+  ingress {
+    description     = "Traffic from Backend ALB"
+    from_port       = var.app_port
+    to_port         = var.app_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.backend_alb.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.environment}-backend-ec2-sg"
+  }
 }
 
 # RDS Security Group
@@ -59,16 +117,14 @@ resource "aws_security_group" "rds" {
   vpc_id      = var.vpc_id
 
   ingress {
-    description     = "Database access from EC2"
+    description     = "Database access from Backend EC2"
     from_port       = var.db_port
     to_port         = var.db_port
     protocol        = "tcp"
-    security_groups = [aws_security_group.ec2.id]
+    security_groups = [aws_security_group.backend_ec2.id]
   }
 
   tags = {
     Name = "${var.environment}-rds-sg"
   }
-
-  depends_on = [aws_security_group.ec2]
 }
